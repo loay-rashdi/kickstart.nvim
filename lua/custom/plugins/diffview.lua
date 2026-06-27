@@ -3,6 +3,7 @@ return {
   cmd = { 'DiffviewOpen', 'DiffviewClose', 'DiffviewFileHistory' },
   keys = {
     { '<leader>gd', '<cmd>DiffviewOpen master...HEAD<cr>', desc = 'Diff branch vs master' },
+    { '<leader>gu', '<cmd>DiffviewOpen<cr>', desc = 'Diff unstaged changes' },
     { '<leader>gq', '<cmd>DiffviewClose<cr>', desc = 'Close Diffview' },
   },
   opts = function()
