@@ -166,6 +166,13 @@ vim.o.scrolloff = 10
 -- See `:help 'confirm'`
 vim.o.confirm = true
 
+-- Show the entire file in diff mode instead of folding away unchanged regions.
+vim.opt.diffopt:append 'context:99999'
+
+-- Align changed lines within large hunks so left/right line up (default cuts off at 40).
+vim.opt.diffopt:remove 'linematch:40'
+vim.opt.diffopt:append 'linematch:60'
+
 -- [[ Basic Keymaps ]]
 --  See `:help vim.keymap.set()`
 
@@ -174,9 +181,11 @@ vim.o.confirm = true
 vim.keymap.set('n', '<Esc>', '<cmd>nohlsearch<CR>')
 vim.keymap.set('i', 'kj', '<ESC>', { desc = 'Exit insert mode with jk' })
 vim.keymap.set('n', '<c-d>', '<c-d>zz', { desc = 'Scroll down and center' })
-vim.keymap.set('n', '<c-j>', '<c-j>zz', { desc = 'Scroll up and center' })
+vim.keymap.set('n', '<c-u>', '<c-u>zz', { desc = 'Scroll up and center' })
 -- Diagnostic keymaps
 vim.keymap.set('n', '<leader>q', vim.diagnostic.setloclist, { desc = 'Open diagnostic [Q]uickfix list' })
+vim.keymap.set('n', '<leader>td', ':edit ~/todo.md<CR>', { desc = '[T]o[D]o list' })
+vim.keymap.set('n', '<leader>cc', require('custom.claude_ref').send, { desc = 'Send file:line to [C]laude [C]ode' })
 
 -- Exit terminal mode in the builtin terminal with a shortcut that is a bit easier
 -- for people to discover. Otherwise, you normally need to press <C-\><C-n>, which
@@ -218,6 +227,15 @@ vim.api.nvim_create_autocmd('TextYankPost', {
   group = vim.api.nvim_create_augroup('kickstart-highlight-yank', { clear = true }),
   callback = function()
     vim.hl.on_yank()
+  end,
+})
+
+-- netrw binds <C-l> to refresh, shadowing the global tmux-navigator mapping.
+vim.api.nvim_create_autocmd('FileType', {
+  desc = 'Restore <C-l> tmux-navigator mapping in netrw',
+  pattern = 'netrw',
+  callback = function(ev)
+    vim.keymap.set('n', '<C-l>', '<cmd>TmuxNavigateRight<cr>', { buffer = ev.buf, silent = true })
   end,
 })
 
@@ -283,6 +301,11 @@ require('lazy').setup({
         topdelete = { text = '‾' },
         changedelete = { text = '~' },
       },
+      on_attach = function(bufnr)
+        vim.keymap.set('n', '<leader>hd', function()
+          require('gitsigns').diffthis('origin/master', { vertical = true })
+        end, { buffer = bufnr, desc = 'git [D]iff side-by-side vs origin/master' })
+      end,
     },
   },
 
@@ -299,7 +322,16 @@ require('lazy').setup({
   --
   -- Then, because we use the `opts` key (recommended), the configuration runs
   -- after the plugin has been loaded as `require(MODULE).setup(opts)`.
-
+  {
+    'bngarren/checkmate.nvim',
+    ft = 'markdown', -- Lazy loads for Markdown files matching patterns in 'files'
+    version = '0.11.2',
+    opts = {
+      files = {
+        '**/todo.md', -- 'todo.md' anywhere in directory tree
+      },
+    },
+  },
   { -- Useful plugin to show you pending keybinds.
     'folke/which-key.nvim',
     event = 'VimEnter', -- Sets the loading event to 'VimEnter'
@@ -436,6 +468,7 @@ require('lazy').setup({
       vim.keymap.set('n', '<leader>sg', builtin.live_grep, { desc = '[S]earch by [G]rep' })
       vim.keymap.set('n', '<leader>sd', builtin.diagnostics, { desc = '[S]earch [D]iagnostics' })
       vim.keymap.set('n', '<leader>sr', builtin.resume, { desc = '[S]earch [R]esume' })
+      vim.keymap.set('n', '<TAB>', '>>', { noremap = true, silent = true, desc = 'Alternate buffers' })
       vim.keymap.set('n', '<leader>s.', builtin.oldfiles, { desc = '[S]earch Recent Files ("." for repeat)' })
       vim.keymap.set('n', '<leader><leader>', builtin.buffers, { desc = '[ ] Find existing buffers' })
 
@@ -487,28 +520,28 @@ require('lazy').setup({
         desc = 'harpoon quick menu',
       },
       {
-        '<c-j>',
+        '<leader>1',
         function()
           require('harpoon'):list():select(1)
         end,
         desc = 'harpoon to file 1',
       },
       {
-        '<c-k>',
+        '<leader>2',
         function()
           require('harpoon'):list():select(2)
         end,
         desc = 'harpoon to file 2',
       },
       {
-        '<c-l>',
+        '<leader>3',
         function()
           require('harpoon'):list():select(3)
         end,
         desc = 'harpoon to file 3',
       },
       {
-        '<c-;>',
+        '<leader>4',
         function()
           require('harpoon'):list():select(4)
         end,
@@ -528,6 +561,28 @@ require('lazy').setup({
         { path = '${3rd}/luv/library', words = { 'vim%.uv' } },
       },
     },
+  },
+  {
+    'scalameta/nvim-metals',
+    ft = { 'scala', 'sbt', 'java' },
+    opts = function()
+      local metals_config = require('metals').bare_config()
+      metals_config.on_attach = function(client, bufnr)
+        -- your on_attach function
+      end
+
+      return metals_config
+    end,
+    config = function(self, metals_config)
+      local nvim_metals_group = vim.api.nvim_create_augroup('nvim-metals', { clear = true })
+      vim.api.nvim_create_autocmd('FileType', {
+        pattern = self.ft,
+        callback = function()
+          require('metals').initialize_or_attach(metals_config)
+        end,
+        group = nvim_metals_group,
+      })
+    end,
   },
   {
     -- Main LSP Configuration
@@ -725,8 +780,10 @@ require('lazy').setup({
       --  - settings (table): Override the default settings passed when initializing the server.
       --        For example, to see the options for `lua_ls`, you could go to: https://luals.github.io/wiki/settings/
       local servers = {
+
         -- clangd = {},
         gopls = {},
+
         -- pyright = {},
         -- rust_analyzer = {},
         -- ... etc. See `:help lspconfig-all` for a list of all the pre-configured LSPs
@@ -771,6 +828,11 @@ require('lazy').setup({
       vim.list_extend(ensure_installed, {
         'stylua', -- Used to format Lua code
       })
+      for i, tool in ipairs(ensure_installed) do
+        if tool == 'gopls' then
+          ensure_installed[i] = { 'gopls', version = 'v0.22.0' }
+        end
+      end
       require('mason-tool-installer').setup { ensure_installed = ensure_installed }
 
       require('mason-lspconfig').setup {
@@ -1067,7 +1129,7 @@ require('lazy').setup({
   --    This is the easiest way to modularize your config.
   --
   --  Uncomment the following line and add your plugins to `lua/custom/plugins/*.lua` to get going.
-  -- { import = 'custom.plugins' },
+  { import = 'custom.plugins' },
   --
   -- For additional information with loading, sourcing and examples see `:help lazy.nvim-🔌-plugin-spec`
   -- Or use telescope!
